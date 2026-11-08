@@ -37,12 +37,6 @@ type RecentItem = {
   time: string;
 };
 
-const formats: Format[] = [
-  { id: "1080", label: "Full HD", detail: "1080p · MP4", size: "18.4 MB", recommended: true },
-  { id: "720", label: "HD", detail: "720p · MP4", size: "9.8 MB" },
-  { id: "audio", label: "Audio only", detail: "M4A · 128 kbps", size: "4.2 MB" },
-];
-
 const platformMap: Record<string, string> = {
   "youtube.com": "YouTube",
   "youtu.be": "YouTube",
@@ -53,6 +47,8 @@ const platformMap: Record<string, string> = {
   "x.com": "X / Twitter",
   "twitter.com": "X / Twitter",
   "reddit.com": "Reddit",
+  "share.google": "Google share",
+  "drive.google.com": "Google Drive",
 };
 
 function displayHost(url: string) {
@@ -84,15 +80,23 @@ export default function Home() {
   const [notice, setNotice] = useState("");
   const [isScanning, setIsScanning] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
-  const [selectedFormat, setSelectedFormat] = useState("1080");
-  const [recent, setRecent] = useState<RecentItem[]>([
-    { id: 1, title: "studio-tour-04", source: "vimeo.com", format: "1080p MP4", time: "2m ago" },
-    { id: 2, title: "launch-teaser", source: "direct source", format: "720p MP4", time: "18m ago" },
-    { id: 3, title: "field-notes-12", source: "youtube.com", format: "M4A audio", time: "1h ago" },
-  ]);
+  const [selectedFormat, setSelectedFormat] = useState("original");
+  const [recent, setRecent] = useState<RecentItem[]>([]);
 
   const sourceName = useMemo(() => (source ? platformFor(source) : "Paste a source link"), [source]);
-  const currentFormat = formats.find(format => format.id === selectedFormat) ?? formats[0];
+  const sourceIsDirect = useMemo(() => isDirectMedia(source), [source]);
+  const directFormat = useMemo<Format>(() => {
+    const extension = source.match(/\.([a-z0-9]+)(?:$|[?#])/i)?.[1]?.toUpperCase() ?? "MEDIA";
+    const isAudio = extension === "MP3" || extension === "M4A";
+    return {
+      id: "original",
+      label: isAudio ? "Original audio" : "Original video",
+      detail: `${extension} · source file`,
+      size: "size unknown",
+      recommended: true,
+    };
+  }, [source]);
+  const currentFormat = directFormat;
 
   const handleScan = (event: FormEvent) => {
     event.preventDefault();
@@ -130,7 +134,7 @@ export default function Home() {
   };
 
   const handleDownload = () => {
-    if (!source) return;
+    if (!source || !sourceIsDirect) return;
     setNotice("");
     setIsDownloading(true);
 
@@ -142,17 +146,14 @@ export default function Home() {
         ...items,
       ].slice(0, 4));
 
-      if (isDirectMedia(source)) {
-        const anchor = document.createElement("a");
-        anchor.href = source;
-        anchor.download = `${title}-${selectedFormat}.${selectedFormat === "audio" ? "m4a" : "mp4"}`;
-        anchor.target = "_blank";
-        anchor.rel = "noreferrer";
-        anchor.click();
-        setNotice("Your direct media file is opening in a new tab for download.");
-      } else {
-        setNotice("Format queued in demo mode. Connect a permitted source resolver to enable file transfer for this platform.");
-      }
+      const extension = source.match(/\.([a-z0-9]+)(?:$|[?#])/i)?.[1] ?? "bin";
+      const anchor = document.createElement("a");
+      anchor.href = source;
+      anchor.download = `${title}-original.${extension}`;
+      anchor.target = "_blank";
+      anchor.rel = "noreferrer";
+      anchor.click();
+      setNotice("Your direct media file is opening in a new tab for download.");
     }, 700);
   };
 
@@ -221,34 +222,37 @@ export default function Home() {
 
             {source ? (
               <section className="results-section result-enter">
-                <div className="section-label"><span>02</span> choose format</div>
+                <div className="section-label"><span>02</span> source check</div>
                 <div className="source-preview">
                   <div className="source-thumb"><Play size={22} fill="currentColor" strokeWidth={0} /></div>
                   <div className="source-details">
-                    <div className="source-status"><span className="ready-dot" /> source ready</div>
-                    <h2>{sourceName} capture</h2>
+                    <div className={`source-status ${sourceIsDirect ? "" : "source-status-muted"}`}><span className={sourceIsDirect ? "ready-dot" : "status-dot-muted"} /> {sourceIsDirect ? "direct file ready" : "link captured"}</div>
+                    <h2>{sourceName}</h2>
                     <p>{displayHost(source)} <span>·</span> scanned just now</p>
                   </div>
                   <div className="source-actions"><button type="button" className="copy-button" onClick={() => navigator.clipboard?.writeText(source)}><Clipboard size={14} /> copy link</button></div>
                 </div>
-                <div className="format-list">
-                  {formats.map(format => (
-                    <button key={format.id} type="button" className={`format-row ${selectedFormat === format.id ? "selected" : ""}`} onClick={() => setSelectedFormat(format.id)}>
-                      <span className="format-radio">{selectedFormat === format.id && <Check size={13} strokeWidth={3} />}</span>
-                      <span className="format-name">{format.label}{format.recommended && <span className="recommended">recommended</span>}</span>
-                      <span className="format-detail">{format.detail}</span>
-                      <span className="format-size">{format.size}</span>
+                {sourceIsDirect ? <>
+                  <div className="format-list">
+                    <button type="button" className="format-row selected" onClick={() => setSelectedFormat("original")}>
+                      <span className="format-radio"><Check size={13} strokeWidth={3} /></span>
+                      <span className="format-name">{directFormat.label}<span className="recommended">original</span></span>
+                      <span className="format-detail">{directFormat.detail}</span>
+                      <span className="format-size">{directFormat.size}</span>
                       <ChevronDown className="format-chevron" size={16} />
                     </button>
-                  ))}
-                </div>
-                <div className="download-row">
-                  <div className="download-note"><Sparkles size={16} /><span>ready when you are<span>downloads stay on your device</span></span></div>
-                  <Button className="download-button" onClick={handleDownload} disabled={isDownloading}>
-                    {isDownloading ? <><Loader2 size={17} className="spin" /> queuing</> : <><Download size={17} /> download {currentFormat.label.toLowerCase()}</>}
-                  </Button>
-                </div>
-                {notice && <div className="inline-message notice-message"><Check size={15} /> {notice}</div>}
+                  </div>
+                  <div className="download-row">
+                    <div className="download-note"><Sparkles size={16} /><span>ready when you are<span>original file · no re-encoding</span></span></div>
+                    <Button className="download-button" onClick={handleDownload} disabled={isDownloading}>
+                      {isDownloading ? <><Loader2 size={17} className="spin" /> opening file</> : <><Download size={17} /> download original</>}
+                    </Button>
+                  </div>
+                  {notice && <div className="inline-message notice-message"><Check size={15} /> {notice}</div>}
+                </> : <div className="unsupported-panel">
+                  <div className="unsupported-icon"><LockKeyhole size={18} /></div>
+                  <div><h3>No direct media file found</h3><p>This is a webpage or share link, not a downloadable video file. Vidzim won’t invent formats or bypass a platform’s controls.</p><span className="supported-types">supported now: direct .mp4 · .webm · .mov · .mp3 · .m4a links</span></div>
+                </div>}
               </section>
             ) : (
               <section className="empty-state">
@@ -262,15 +266,15 @@ export default function Home() {
           <aside className="activity-rail">
             <div className="rail-heading"><span className="section-label"><span>03</span> recent activity</span><button type="button" className="refresh-button" aria-label="Refresh recent activity"><RefreshCw size={15} /></button></div>
             <div className="recent-list">
-              {recent.map(item => (
+              {recent.length > 0 ? recent.map(item => (
                 <article className="recent-item" key={item.id}>
                   <div className="recent-icon"><FileVideo size={16} /></div>
                   <div className="recent-copy"><strong>{item.title}</strong><span>{item.source}</span></div>
                   <div className="recent-meta"><span>{item.format}</span><time>{item.time}</time></div>
                 </article>
-              ))}
+              )) : <div className="recent-empty"><Clock3 size={15} /><span>no local downloads yet</span></div>}
             </div>
-            <div className="rail-footer"><Clock3 size={14} /> local session history <span>·</span> 3 items</div>
+            <div className="rail-footer"><Clock3 size={14} /> local session history <span>·</span> {recent.length} {recent.length === 1 ? "item" : "items"}</div>
             <div className="rail-callout"><span className="callout-mark">↳</span><p>Vidzim never asks for your account password. If a source is locked, we leave it locked.</p></div>
           </aside>
         </section>
